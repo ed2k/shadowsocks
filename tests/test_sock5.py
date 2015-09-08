@@ -79,7 +79,7 @@ class SocketTransform(Thread):
 			self.dest.close()
 
 	def resend(self):
-		self.sock=self.src
+		self.sock=self.src.client_sock
 		self.dest=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
 		self.dest.connect((self.dest_ip,self.dest_port))
 		if self.bind:
@@ -90,7 +90,7 @@ class SocketTransform(Thread):
 		self.sock.settimeout(RESENDTIMEOUT)
 		self.dest.settimeout(RESENDTIMEOUT)
                 dest = DSock(self.dest,self.dest_ip, self.dest_port)
-                src = DSock(self.sock, None, None)
+                src = DSock(self.sock, self.src.client_addr[0], self.src.client_addr[1])
 		Resender(src, dest).start()
 		Resender(dest, src).start()
 
@@ -104,33 +104,36 @@ class Resender(Thread):
                 self.cnt = 0
                 self.head = ''
 
+        def debug(self):
+            if self.src.port != 443 and self.dest.port != 443:
+              print(self.src.ip, self.src.port, '>', self.dest.ip,self.dest.port, self.cnt, [self.head])
+            else: print(self.src.ip, self.src.port, '>', self.dest.ip,self.dest.port, self.cnt, [self.head[:16]])
+
 	def run(self):
 		try:
 			self.resend(self.src,self.dest)
 		except Exception,e:
 			getLogger().write("Connection lost %s" %(e.message))
-                        if self.src.ip is None:
-                           print('>', self.dest.ip, self.cnt, [self.head])
-                        else: print('<', self.src.ip, self.cnt, [self.head])
+                        self.debug()
 			self.src.sock.close()
 			self.dest.sock.close()
 
 	def resend(self,src,dest):
-		data=src.sock.recv(10)
-                self.cnt = len(data)
-                self.head += data
+		data=src.sock.recv(64)
+                if data:
+                   self.cnt = len(data)
+                   self.head = data
+                   self.debug()
 		while data:
 			dest.sock.sendall(data)
-			data=src.sock.recv(10)
+			data=src.sock.recv(64)
                         self.cnt += len(data)
-                        if self.cnt < 49:
+                        if self.cnt < 149:
                             self.head += data
 		src.sock.close()
 		dest.sock.close()
 		#getLogger().write("Client quit normally\n")
-                if src.ip is None:
-                    print('>',dest.ip, self.cnt,[self.head])
-                else: print('<', src.ip, self.cnt, [self.head])
+                self.debug()
 
 def create_server(ip,port):
         conns = []
@@ -144,7 +147,8 @@ def create_server(ip,port):
 		sock.settimeout(SOCKTIMEOUT)
 		#getLogger().write("Got one client connection")
                 print([addr_info])
-                conns.append(ReqPair(sock, addr_info))
+                req_pair = ReqPair(sock, addr_info)
+                conns.append(req_pair)
 		try:
 			ver,nmethods,methods=(sock.recv(1),sock.recv(1),sock.recv(1))
 			sock.sendall(VER+METHOD)
@@ -178,7 +182,7 @@ def create_server(ip,port):
 			elif cmd=="\x01":#CONNECT
 				sock.sendall(VER+SUCCESS+"\x00"+"\x01"+server_ip+chr(port/256)+chr(port%256))
 				#getLogger().write("Starting transform thread")
-				SocketTransform(server_sock,dst_addr,dst_port).start()
+				SocketTransform(req_pair,dst_addr,dst_port).start()
 			else:#Unspport Command
 				sock.sendall(VER+UNSPPORTCMD+server_ip+chr(port/256)+chr(port%256))
 				sock.close()
