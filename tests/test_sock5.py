@@ -55,6 +55,12 @@ class DSock():
         self.cnt = 0
     def add_cnt(self, cnt): self.cnt += cnt
 
+class ReqPair():
+    def __init__(self, sock, address):
+        self.client_sock = sock
+        self.client_addr = address
+    def add_xxx(self): pass
+
 class SocketTransform(Thread):
 	def __init__(self,src,dest_ip,dest_port,bind=False):
 		Thread.__init__(self)
@@ -127,6 +133,7 @@ class Resender(Thread):
                 else: print('<', src.ip, self.cnt, [self.head])
 
 def create_server(ip,port):
+        conns = []
 	transformer=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
         transformer.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 	transformer.bind((ip,port))
@@ -136,6 +143,8 @@ def create_server(ip,port):
 		sock,addr_info=transformer.accept()
 		sock.settimeout(SOCKTIMEOUT)
 		#getLogger().write("Got one client connection")
+                print([addr_info])
+                conns.append(ReqPair(sock, addr_info))
 		try:
 			ver,nmethods,methods=(sock.recv(1),sock.recv(1),sock.recv(1))
 			sock.sendall(VER+METHOD)
@@ -191,7 +200,7 @@ if __name__=='__main__':
 		port=9051
 		create_server(ip,port)
 	except Exception,e:
-		getLogger().write("Error on create server:"+e,Log.ERROR)
+		getLogger().write("Error on create server:"+e.message,Log.ERROR)
 
 
 
