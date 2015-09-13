@@ -3,7 +3,7 @@
 
 import socket
 from threading import Thread
-import sys
+import sys, time
 import signal
 
 SOCKTIMEOUT=5#客户端连接超时(秒)
@@ -25,9 +25,9 @@ UNASSIGNED="\x09"
 _LOGGER=None
 
 class Log:
-	WARN="[WARN:]"
-	INFO="[INFO:]"
-	ERROR="[ERROR:]"
+	WARN="[WARN]"
+	INFO="[INFO]"
+	ERROR="[ERR]"
 	def write(self,message,level):
 		pass
 		
@@ -69,14 +69,16 @@ class SocketTransform(Thread):
 		self.src=src
 		self.bind=bind
 		self.setDaemon(True)
+        def close(self):
+            self.sock.close()
+            self.dest.close()
 
 	def run(self):
 		try:
 			self.resend()
 		except Exception,e:
 			getLogger().write("Error on SocketTransform %s" %(e.message,),Log.ERROR)
-			self.sock.close()
-			self.dest.close()
+			self.close()
 
 	def resend(self):
 		self.sock=self.src.client_sock
@@ -103,6 +105,9 @@ class Resender(Thread):
 		self.dest=dest
                 self.cnt = 0
                 self.head = ''
+        def close(self):
+            self.src.sock.close()
+            self.dest.sock.close()
 
         def debug(self):
             if self.src.port != 443 and self.dest.port != 443:
@@ -111,27 +116,29 @@ class Resender(Thread):
 
 	def run(self):
 		try:
-			self.resend(self.src,self.dest)
+			self.resend()
 		except Exception,e:
-			getLogger().write("Connection lost %s" %(e.message))
+			getLogger().write("con lost %s" %(e.message))
                         self.debug()
-			self.src.sock.close()
-			self.dest.sock.close()
+			self.close()
 
-	def resend(self,src,dest):
-		data=src.sock.recv(64)
+	def resend(self):
+                t = time.time()
+		data = self.src.sock.recv(64)
                 if data:
                    self.cnt = len(data)
                    self.head = data
                    self.debug()
 		while data:
-			dest.sock.sendall(data)
-			data=src.sock.recv(64)
+                        if self.cnt/(time.time()-t) > 1000000:
+                           print('rate', self.cnt/(time.time()-t))
+                           #time.sleep(1)
+			self.dest.sock.sendall(data)
+			data = self.src.sock.recv(64)
                         self.cnt += len(data)
                         if self.cnt < 149:
                             self.head += data
-		src.sock.close()
-		dest.sock.close()
+		self.close()
 		#getLogger().write("Client quit normally\n")
                 self.debug()
 
@@ -166,7 +173,9 @@ def create_server(ip,port):
                         if ver=='\x04': 
                            handle_sock4(req_pair, nmethods, methods)
                            continue
-                        print 'here'
+                        if ver == 'd':
+                           handle_debug(req_pair, nmethods, methods)
+                           continue
 			sock.sendall(VER+METHOD)
 			ver,cmd,rsv,atyp=(sock.recv(1),sock.recv(1),sock.recv(1),sock.recv(1))
                         print([ver,cmd,rsv,atyp])
