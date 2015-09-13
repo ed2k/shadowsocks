@@ -135,6 +135,17 @@ class Resender(Thread):
 		#getLogger().write("Client quit normally\n")
                 self.debug()
 
+def handle_sock4(req_pair, cd, byte3):
+    sock = req_pair.client_sock
+    b4,addr=sock.recv(1),sock.recv(4)
+    dst_addr=".".join([str(ord(i)) for i in addr])
+    dst_port = ord(b4)+(ord(byte3)<<8)
+    print(dst_addr, dst_port)
+    print [sock.recv(1)]
+    sock.sendall('\x00'+'\x5a'+byte3+b4+addr)
+    SocketTransform(req_pair,dst_addr,dst_port).start() 
+    
+
 def create_server(ip,port):
         conns = []
 	transformer=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -148,11 +159,17 @@ def create_server(ip,port):
 		#getLogger().write("Got one client connection")
                 print([addr_info])
                 req_pair = ReqPair(sock, addr_info)
-                conns.append(req_pair)
+                #conns.append(req_pair)
 		try:
 			ver,nmethods,methods=(sock.recv(1),sock.recv(1),sock.recv(1))
+                        print([ver,nmethods,methods])
+                        if ver=='\x04': 
+                           handle_sock4(req_pair, nmethods, methods)
+                           continue
+                        print 'here'
 			sock.sendall(VER+METHOD)
 			ver,cmd,rsv,atyp=(sock.recv(1),sock.recv(1),sock.recv(1),sock.recv(1))
+                        print([ver,cmd,rsv,atyp])
 			dst_addr=None
 			dst_port=None
 			if atyp=="\x01":#IPV4
